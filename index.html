@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="az">
+<head>
+    <meta charset="UTF-8">
+    <title>RBT İndeksləməli Verilənlər Bazası</title>
+    <style>
+        :root { --rbt-red: #ff4757; --rbt-black: #2f3542; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f1f2f6; display: flex; flex-direction: column; height: 100vh; margin: 0; }
+        header { background: #2f3542; color: white; padding: 20px; text-align: center; box-shadow: 0 2px 10px rgba(0,0,0,0.2); }
+        .main-container { display: flex; flex: 1; overflow: hidden; padding: 20px; gap: 20px; }
+        
+        /* Sol tərəf - Form və Cədvəl */
+        .db-panel { flex: 1; background: white; border-radius: 12px; padding: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); display: flex; flex-direction: column; }
+        .form-group { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; }
+        input, button { padding: 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; }
+        button { background: #1e90ff; color: white; cursor: pointer; border: none; font-weight: bold; }
+        button:hover { background: #3742fa; }
+        .search-box { margin-bottom: 20px; display: flex; gap: 10px; }
+        .search-box input { flex: 1; border: 2px solid #1e90ff; }
+        
+        /* Sağ tərəf - Ağac Vizualizasiyası */
+        .tree-panel { flex: 2; background: #ffffff; border-radius: 12px; padding: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); overflow: auto; position: relative; border-left: 5px solid #1e90ff; }
+        
+        /* Vizual Ağac Elementləri */
+        .node { width: 50px; height: 50px; border-radius: 50%; color: white; display: flex; flex-direction: column; justify-content: center; align-items: center; font-size: 12px; font-weight: bold; position: relative; z-index: 2; box-shadow: 0 4px 8px rgba(0,0,0,0.3); }
+        .RED { background: var(--rbt-red); border: 2px solid #c0392b; }
+        .BLACK { background: var(--rbt-black); border: 2px solid #000; }
+        .tree-wrapper { display: flex; flex-direction: column; align-items: center; }
+        .children { display: flex; margin-top: 30px; gap: 20px; position: relative; }
+        .connector { position: absolute; top: -15px; height: 2px; background: #ccc; z-index: 1; }
+        
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { text-align: left; padding: 12px; border-bottom: 1px solid #eee; }
+        th { background: #f8f9fa; }
+        .highlight { background: #fff200 !important; transition: 0.5s; }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>Tələbə Məlumat Sistemi (Red-Black Tree Indexing)</h1>
+    <p>Verilənlər bazasında sürətli axtarış üçün Qara-Qırmızı Ağacdan istifadə nümunəsi</p>
+</header>
+
+<div class="main-container">
+    <div class="db-panel">
+        <h3>Yeni Tələbə Əlavə Et</h3>
+        <div class="form-group">
+            <input type="number" id="stdId" placeholder="Tələbə ID (Açar)">
+            <input type="text" id="stdName" placeholder="Ad Soyad">
+            <input type="text" id="stdDept" placeholder="İxtisas" style="grid-column: span 2;">
+            <button onclick="dbInsert()" style="grid-column: span 2;">Məlumatı Bazaya Yaz (Insert)</button>
+        </div>
+
+        <div class="search-box">
+            <input type="number" id="searchId" placeholder="Axtarılacaq ID...">
+            <button onclick="dbSearch()" style="background: #2ed573;">Axtar (Find)</button>
+        </div>
+
+        <h3>Baza Cədvəli (Log)</h3>
+        <div style="overflow-y: auto; flex: 1;">
+            <table id="stdTable">
+                <thead>
+                    <tr><th>ID</th><th>Ad Soyad</th><th>İxtisas</th></tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="tree-panel" id="treeView">
+        <h3 style="text-align: center;">İndeks Strukturu (Visual Index)</h3>
+        <div id="treeContent" class="tree-wrapper"></div>
+    </div>
+</div>
+
+<script>
+    // --- RED-BLACK TREE LOGIC (Indexing Engine) ---
+    const COLOR = { RED: "RED", BLACK: "BLACK" };
+    class StudentNode {
+        constructor(id, name, dept) {
+            this.id = id;
+            this.name = name;
+            this.dept = dept;
+            this.color = COLOR.RED;
+            this.left = null;
+            this.right = null;
+            this.parent = null;
+        }
+    }
+
+    class RedBlackDatabaseIndex {
+        constructor() { this.root = null; }
+
+        leftRotate(x) {
+            let y = x.right;
+            x.right = y.left;
+            if (y.left !== null) y.left.parent = x;
+            y.parent = x.parent;
+            if (x.parent === null) this.root = y;
+            else if (x === x.parent.left) x.parent.left = y;
+            else x.parent.right = y;
+            y.left = x;
+            x.parent = y;
+        }
+
+        rightRotate(y) {
+            let x = y.left;
+            y.left = x.right;
+            if (x.right !== null) x.right.parent = y;
+            x.parent = y.parent;
+            if (y.parent === null) this.root = x;
+            else if (y === y.parent.right) y.parent.right = x;
+            else y.parent.left = x;
+            x.right = y;
+            y.parent = x;
+        }
+
+        insert(id, name, dept) {
+            let node = new StudentNode(id, name, dept);
+            let y = null;
+            let x = this.root;
+            while (x !== null) {
+                y = x;
+                if (node.id < x.id) x = x.left;
+                else x = x.right;
+            }
+            node.parent = y;
+            if (y === null) this.root = node;
+            else if (node.id < y.id) y.left = node;
+            else y.right = node;
+            this.fixInsert(node);
+        }
+
+        fixInsert(k) {
+            while (k.parent && k.parent.color === COLOR.RED) {
+                if (k.parent === k.parent.parent.left) {
+                    let u = k.parent.parent.right;
+                    if (u && u.color === COLOR.RED) {
+                        k.parent.color = COLOR.BLACK; u.color = COLOR.BLACK;
+                        k.parent.parent.color = COLOR.RED; k = k.parent.parent;
+                    } else {
+                        if (k === k.parent.right) { k = k.parent; this.leftRotate(k); }
+                        k.parent.color = COLOR.BLACK; k.parent.parent.color = COLOR.RED;
+                        this.rightRotate(k.parent.parent);
+                    }
+                } else {
+                    let u = k.parent.parent.left;
+                    if (u && u.color === COLOR.RED) {
+                        k.parent.color = COLOR.BLACK; u.color = COLOR.BLACK;
+                        k.parent.parent.color = COLOR.RED; k = k.parent.parent;
+                    } else {
+                        if (k === k.parent.left) { k = k.parent; this.rightRotate(k); }
+                        k.parent.color = COLOR.BLACK; k.parent.parent.color = COLOR.RED;
+                        this.leftRotate(k.parent.parent);
+                    }
+                }
+                if (k === this.root) break;
+            }
+            this.root.color = COLOR.BLACK;
+        }
+
+        search(id) {
+            let current = this.root;
+            while (current !== null) {
+                if (id === current.id) return current;
+                current = id < current.id ? current.left : current.right;
+            }
+            return null;
+        }
+    }
+
+    // --- UI & DATABASE SIMULATION ---
+    const dbIndex = new RedBlackDatabaseIndex();
+
+    function dbInsert() {
+        const id = parseInt(document.getElementById("stdId").value);
+        const name = document.getElementById("stdName").value;
+        const dept = document.getElementById("stdDept").value;
+
+        if (!id || !name) { alert("ID və Ad daxil edin!"); return; }
+        if (dbIndex.search(id)) { alert("Bu ID artıq bazada var!"); return; }
+
+        dbIndex.insert(id, name, dept);
+        addToTable(id, name, dept);
+        updateTreeView();
+        clearForm();
+    }
+
+    function addToTable(id, name, dept) {
+        const tbody = document.querySelector("#stdTable tbody");
+        const row = tbody.insertRow(0);
+        row.id = "row-" + id;
+        row.innerHTML = `<td>${id}</td><td>${name}</td><td>${dept}</td>`;
+    }
+
+    function dbSearch() {
+        const sid = parseInt(document.getElementById("searchId").value);
+        const result = dbIndex.search(sid);
+        
+        if (result) {
+            alert(`Tələbə Tapıldı: ${result.name} (${result.dept})`);
+            const row = document.getElementById("row-" + sid);
+            row.classList.add("highlight");
+            setTimeout(() => row.classList.remove("highlight"), 2000);
+        } else {
+            alert("Tələbə tapılmadı!");
+        }
+    }
+
+    function generateTreeHTML(node) {
+        if (!node) return '';
+        return `
+            <div class="tree-wrapper">
+                <div class="node ${node.color}" id="node-${node.id}">
+                    ${node.id}
+                    <span style="font-size:8px;">${node.name.split(' ')[0]}</span>
+                </div>
+                ${(node.left || node.right) ? `
+                    <div class="children">
+                        ${generateTreeHTML(node.left) || '<div class="node" style="background:#eee; color:#999; box-shadow:none;">NIL</div>'}
+                        ${generateTreeHTML(node.right) || '<div class="node" style="background:#eee; color:#999; box-shadow:none;">NIL</div>'}
+                    </div>
+                ` : ''}
+            </div>
+        `;
+    }
+
+    function updateTreeView() {
+        document.getElementById("treeContent").innerHTML = generateTreeHTML(dbIndex.root);
+    }
+
+    function clearForm() {
+        document.getElementById("stdId").value = '';
+        document.getElementById("stdName").value = '';
+        document.getElementById("stdDept").value = '';
+    }
+</script>
+</body>
+</html>
